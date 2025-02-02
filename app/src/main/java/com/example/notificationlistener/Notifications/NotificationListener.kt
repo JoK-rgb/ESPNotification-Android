@@ -1,4 +1,4 @@
-package com.example.notificationlistener
+package com.example.notificationlistener.Notifications
 
 import android.content.ComponentName
 import android.content.Intent

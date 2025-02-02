@@ -1,95 +1,76 @@
 package com.example.notificationlistener
 
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanResult
+import android.app.AlertDialog
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.widget.Button
-import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import android.Manifest
-import android.app.AlertDialog
-import android.bluetooth.BluetoothSocket
 import android.view.LayoutInflater
-import androidx.annotation.RequiresApi
+import android.widget.Button
+import androidx.activity.ComponentActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import java.io.IOException
-import java.util.UUID
+import com.example.notificationlistener.Bluetooth.BluetoothDeviceAdapter
+import com.example.notificationlistener.Bluetooth.BluetoothDeviceInfo
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var bluetoothAdapter: BluetoothAdapter
-    private var isScanning = false
+    // Instance of BluetoothConnection for handling Bluetooth functionality.
+    private lateinit var bluetoothConnection: BluetoothConnection
+
+    // Adapter for showing Bluetooth devices in a dialog.
     private lateinit var deviceAdapter: BluetoothDeviceAdapter
+
+    // Dialog that displays available Bluetooth devices.
     private var deviceDialog: AlertDialog? = null
-
-    // Define permissions based on API level
-    private val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        arrayOf(
-            Manifest.permission.BLUETOOTH_SCAN,
-            Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-        )
-    } else {
-        arrayOf(
-            Manifest.permission.BLUETOOTH,
-            Manifest.permission.BLUETOOTH_ADMIN,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-        )
-    }
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        if (permissions.all { it.value }) {
-            startBluetoothScan()
-        } else {
-            Toast.makeText(this, "Permissions required for Bluetooth scanning", Toast.LENGTH_LONG).show()
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        val bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-        bluetoothAdapter = bluetoothManager.adapter
+        // Initialize BluetoothConnection. The callback here forwards discovered devices
+        // to the adapter if it has been initialized.
+        bluetoothConnection = BluetoothConnection(this) { device ->
+            if (::deviceAdapter.isInitialized) {
+                deviceAdapter.addDevice(device)
+            }
+        }
 
+        // Button to allow notification listener permissions.
         findViewById<Button>(R.id.allowPermissionsButton).setOnClickListener {
             checkAndRequestNotificationPermission()
         }
 
+        // Button to start scanning for Bluetooth devices.
         findViewById<Button>(R.id.scanBluetoothButton).setOnClickListener {
-            if (!isScanning) {
+            if (!bluetoothConnection.isScanning) {
                 showDeviceDialog()
             }
-            checkBluetoothPermissions()
+            bluetoothConnection.checkBluetoothPermissions()
         }
     }
 
+    /**
+     * Redirects to the notification listener settings.
+     */
     private fun checkAndRequestNotificationPermission() {
         redirectToSettings()
     }
 
     private fun redirectToSettings() {
-        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
-            startActivity(this)
+        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).also {
+            startActivity(it)
         }
     }
 
+    /**
+     * Displays a dialog with a list of discovered Bluetooth devices.
+     */
     private fun showDeviceDialog() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_bluetooth_devices, null)
         val recyclerView = dialogView.findViewById<RecyclerView>(R.id.devicesRecyclerView)
         recyclerView.layoutManager = LinearLayoutManager(this)
 
+        // Initialize the adapter. The callback is used when a device is selected.
         deviceAdapter = BluetoothDeviceAdapter { device ->
             showConnectionDialog(device)
         }
@@ -102,7 +83,7 @@ class MainActivity : ComponentActivity() {
             .create()
 
         dialogView.findViewById<Button>(R.id.closeButton).setOnClickListener {
-            stopBluetoothScan()
+            bluetoothConnection.stopBluetoothScan()
             deviceDialog?.dismiss()
             deviceDialog = null
         }
@@ -111,12 +92,16 @@ class MainActivity : ComponentActivity() {
         deviceDialog?.show()
     }
 
+    /**
+     * Shows a confirmation dialog asking if the user wants to connect to the selected device.
+     */
     private fun showConnectionDialog(device: BluetoothDeviceInfo) {
         AlertDialog.Builder(this)
             .setTitle("Connect to Device")
             .setMessage("Would you like to connect to ${device.name}?")
             .setPositiveButton("Yes") { dialog, _ ->
-                //connectToDevice(device)
+                // Implement connection logic here.
+                // e.g., bluetoothConnection.connectToDevice(device)
                 dialog.dismiss()
             }
             .setNegativeButton("No") { dialog, _ ->
@@ -126,110 +111,12 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-
-    private fun checkBluetoothPermissions() {
-        if (!bluetoothAdapter.isEnabled) {
-            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-            try {
-                startActivity(enableBtIntent)
-            } catch (e: SecurityException) {
-                Toast.makeText(this, "Bluetooth permission denied", Toast.LENGTH_SHORT).show()
-            }
-            return
-        }
-
-        // Check if we have all required permissions
-        val hasPermissions = requiredPermissions.all { permission ->
-            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-        }
-
-        if (hasPermissions) {
-            startBluetoothScan()
-        } else {
-            requestPermissionLauncher.launch(requiredPermissions)
-        }
-    }
-
-    private fun startBluetoothScan() {
-        if (isScanning) {
-            stopBluetoothScan()
-            return
-        }
-
-        // Check permissions again just before scanning
-        val hasPermissions = requiredPermissions.all { permission ->
-            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-        }
-
-        if (!hasPermissions) {
-            Toast.makeText(this, "Missing required permissions", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        try {
-            isScanning = true
-            bluetoothAdapter.bluetoothLeScanner?.startScan(scanCallback)
-        } catch (e: SecurityException) {
-            isScanning = false
-            Toast.makeText(this, "Failed to start scanning: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun stopBluetoothScan() {
-        // Check permissions before stopping scan
-        val hasPermissions = requiredPermissions.all { permission ->
-            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-        }
-        if (!hasPermissions) {
-            return
-        }
-
-        try {
-            isScanning = false
-            bluetoothAdapter.bluetoothLeScanner?.stopScan(scanCallback)
-        } catch (e: SecurityException) {
-            Toast.makeText(this, "Failed to stop scanning: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private val scanCallback = object : ScanCallback() {
-        @RequiresApi(Build.VERSION_CODES.O)
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
-            super.onScanResult(callbackType, result)
-            try {
-                val deviceName = result.device.name
-                val deviceAddress = result.device.address
-                val rssi = result.rssi
-
-                if(result.isConnectable && !deviceName.isNullOrEmpty()){
-                    runOnUiThread {
-                        deviceAdapter.addDevice(BluetoothDeviceInfo(
-                            name = deviceName,
-                            address = deviceAddress,
-                            lastSeen = System.currentTimeMillis() // Add this line
-                        ))
-                    }
-                }
-            } catch (e: SecurityException) {
-                runOnUiThread {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Cannot access device information: permission denied",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        }
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        if (isScanning) {
-            stopBluetoothScan()
+        if (bluetoothConnection.isScanning) {
+            bluetoothConnection.stopBluetoothScan()
         }
         deviceDialog?.dismiss()
         deviceDialog = null
     }
 }
-
-

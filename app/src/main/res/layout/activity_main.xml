@@ -16,19 +16,10 @@
         android:layout_marginTop="20dp"/>
 
     <Button
-        android:id="@+id/allowBluetoothPermissionsButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Allow Bluetooth Permissions"
-        android:layout_below="@id/allowPermissionsButton"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="20dp"/>
-
-    <Button
         android:id="@+id/scanBluetoothButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@id/allowBluetoothPermissionsButton"
+        android:layout_below="@id/allowPermissionsButton"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="20dp"
         android:text="Scan Bluetooth" />

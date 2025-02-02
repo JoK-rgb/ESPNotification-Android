@@ -1,4 +1,4 @@
-package com.example.notificationlistener
+package com.example.notificationlistener.Bluetooth
 
 import android.os.Handler
 import android.os.Looper
@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import com.example.notificationlistener.R
 import java.util.concurrent.ConcurrentHashMap
 
 // BluetoothDevice.kt
