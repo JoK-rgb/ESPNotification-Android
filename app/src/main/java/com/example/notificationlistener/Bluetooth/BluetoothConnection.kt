@@ -25,9 +25,9 @@ class BluetoothConnection(
     private val activity: ComponentActivity,
     private val onDeviceFound: (BluetoothDeviceInfo) -> Unit
 ) {
-    // Initialize Bluetooth adapter using the system's BluetoothManager.
-    private val bluetoothManager =
-        activity.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+    private var bluetoothGatt: BluetoothGatt? = null
+    private var rxCharacteristic: BluetoothGattCharacteristic? = null
+    private val bluetoothManager = activity.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter = bluetoothManager.adapter
 
     var isScanning: Boolean = false
@@ -41,8 +41,6 @@ class BluetoothConnection(
         instance = this
     }
 
-
-    // Define required permissions based on the API level.
     private val requiredPermissions: Array<String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(
             Manifest.permission.BLUETOOTH_SCAN,
@@ -57,7 +55,6 @@ class BluetoothConnection(
         )
     }
 
-    // Register for the permission request callback.
     private val requestPermissionLauncher = activity.registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -72,7 +69,6 @@ class BluetoothConnection(
         }
     }
 
-    // Scan callback: called for each discovered Bluetooth LE device.
     private val scanCallback = object : ScanCallback() {
         @RequiresApi(Build.VERSION_CODES.O)
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -117,11 +113,6 @@ class BluetoothConnection(
         }
     }
 
-    /**
-     * Checks whether Bluetooth is enabled and whether the required permissions have been granted.
-     * If permissions are missing, the system permission dialog will be shown.
-     * If Bluetooth is disabled, an intent to enable it is fired.
-     */
     fun checkBluetoothPermissions() {
         if (!bluetoothAdapter.isEnabled) {
             val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
@@ -144,10 +135,6 @@ class BluetoothConnection(
         }
     }
 
-    /**
-     * Starts scanning for Bluetooth LE devices.
-     * If a scan is already in progress, it stops the scan.
-     */
     fun startBluetoothScan() {
         if (isScanning) {
             stopBluetoothScan()
@@ -176,9 +163,6 @@ class BluetoothConnection(
         }
     }
 
-    /**
-     * Stops the Bluetooth LE scan.
-     */
     fun stopBluetoothScan() {
         val hasPermissions = requiredPermissions.all { permission ->
             ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
@@ -196,10 +180,6 @@ class BluetoothConnection(
             ).show()
         }
     }
-
-    // Variables and callback for managing the Bluetooth connection.
-    private var bluetoothGatt: BluetoothGatt? = null
-    private var rxCharacteristic: BluetoothGattCharacteristic? = null
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -224,15 +204,9 @@ class BluetoothConnection(
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                // Look for the UART service by its UUID.
                 val uartService = gatt.getService(UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E"))
                 if (uartService != null) {
-                    activity.runOnUiThread {
-                        Toast.makeText(activity, "UART service found", Toast.LENGTH_SHORT).show()
-                    }
-                    // Save the RX characteristic (the one with the WRITE property).
                     rxCharacteristic = uartService.getCharacteristic(UUID.fromString("6E400002-B5A3-F393-E0A9-E50E24DCCA9E"))
-                    // Optionally, send data immediately.
                     rxCharacteristic?.let {
                         sendData("Connected to App")
                     }
@@ -243,28 +217,9 @@ class BluetoothConnection(
                 }
             }
         }
-
-        override fun onCharacteristicWrite(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            status: Int
-        ) {
-            activity.runOnUiThread {
-                if (status == BluetoothGatt.GATT_SUCCESS) {
-                    Toast.makeText(activity, "Data sent successfully", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(activity, "Failed to send data", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
     }
 
-    /**
-     * Connects to a Bluetooth device given its MAC address.
-     * All connection-related operations are handled within this class.
-     */
     fun connectToDevice(deviceAddress: String) {
-        // Get the remote device from its MAC address.
         val device: BluetoothDevice? = bluetoothAdapter.getRemoteDevice(deviceAddress)
         if (device == null) {
             Toast.makeText(activity, "Device not found", Toast.LENGTH_SHORT).show()
@@ -279,14 +234,9 @@ class BluetoothConnection(
         }
     }
 
-    /**
-     * Sends a string message to the connected device via the RX characteristic.
-     */
     fun sendData(data: String) {
         rxCharacteristic?.let { characteristic ->
-            // Convert the string data to a byte array.
             characteristic.value = data.toByteArray()
-            // Write the data to the characteristic.
             if (ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
                 bluetoothGatt?.writeCharacteristic(characteristic)
             } else {

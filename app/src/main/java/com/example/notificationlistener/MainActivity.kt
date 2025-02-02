@@ -97,6 +97,9 @@ class MainActivity : ComponentActivity() {
                 // Use the BluetoothConnection to handle the connection.
                 bluetoothConnection.connectToDevice(device.address)
                 dialog.dismiss()
+                bluetoothConnection.stopBluetoothScan()
+                deviceDialog?.dismiss()
+                deviceDialog = null
             }
             .setNegativeButton("No") { dialog, _ ->
                 dialog.dismiss()
