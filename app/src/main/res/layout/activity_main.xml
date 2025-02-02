@@ -11,7 +11,7 @@
         android:id="@+id/allowPermissionsButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Allow Permissions"
+        android:text="Allow Notification Permission"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="20dp"/>
 
@@ -22,6 +22,6 @@
         android:layout_below="@id/allowPermissionsButton"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="20dp"
-        android:text="Scan Bluetooth" />
+        android:text="Connect to Device" />
 
 </RelativeLayout>

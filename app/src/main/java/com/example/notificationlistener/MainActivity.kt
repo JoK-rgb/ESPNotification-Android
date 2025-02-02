@@ -14,21 +14,15 @@ import com.example.notificationlistener.Bluetooth.BluetoothDeviceInfo
 
 class MainActivity : ComponentActivity() {
 
-    // Instance of BluetoothConnection for handling Bluetooth functionality.
     private lateinit var bluetoothConnection: BluetoothConnection
-
-    // Adapter for showing Bluetooth devices in a dialog.
     private lateinit var deviceAdapter: BluetoothDeviceAdapter
-
-    // Dialog that displays available Bluetooth devices.
     private var deviceDialog: AlertDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Initialize BluetoothConnection. The callback here forwards discovered devices
-        // to the adapter if it has been initialized.
+        // Initialize the BluetoothConnection. Discovered devices are forwarded to the adapter.
         bluetoothConnection = BluetoothConnection(this) { device ->
             if (::deviceAdapter.isInitialized) {
                 deviceAdapter.addDevice(device)
@@ -100,8 +94,8 @@ class MainActivity : ComponentActivity() {
             .setTitle("Connect to Device")
             .setMessage("Would you like to connect to ${device.name}?")
             .setPositiveButton("Yes") { dialog, _ ->
-                // Implement connection logic here.
-                // e.g., bluetoothConnection.connectToDevice(device)
+                // Use the BluetoothConnection to handle the connection.
+                bluetoothConnection.connectToDevice(device.address)
                 dialog.dismiss()
             }
             .setNegativeButton("No") { dialog, _ ->

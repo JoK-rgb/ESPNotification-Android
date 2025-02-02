@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.example.notificationlistener.BluetoothConnection
 
 class NotificationListener : NotificationListenerService() {
     private var componentName: ComponentName? = null
@@ -49,14 +50,34 @@ class NotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        val packageName = sbn?.packageName ?: ""
-        val extras = sbn?.notification?.extras
+        val packageName = sbn?.packageName ?: return // Get the package name
 
-        // Extract data from notification extras as needed
-        val title = extras?.getCharSequence("android.title").toString()
-        val text = extras?.getCharSequence("android.text").toString()
+        // Use PackageManager to get the app name
+        val packageManager = applicationContext.packageManager
+        val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+        val appName = packageManager.getApplicationLabel(applicationInfo).toString()
 
-        Log.e("title", "NotificationListener: " + title);
-        Log.e("text", "NotificationListener: " +  text);
+        // Extract notification content
+        val extras = sbn.notification.extras
+        val title = extras?.getCharSequence("android.title")?.toString() ?: "No Title"
+        val text = extras?.getCharSequence("android.text")?.toString() ?: "No Text"
+
+        Log.d("NotificationListener", "Notification from $appName: $title - $text")
+
+        sendData("$appName: $title - $text")
+    }
+
+    /**
+     * Sends the given data to the ESP32 via the shared BluetoothConnection.
+     */
+    private fun sendData(data: String) {
+        // Ensure that our shared BluetoothConnection instance is available.
+        val bluetoothConnection = BluetoothConnection.instance
+        if (bluetoothConnection != null) {
+            bluetoothConnection.sendData(data)
+            Log.i("NotificationListener", "Sent data: $data")
+        } else {
+            Log.e("NotificationListener", "Bluetooth connection is not available")
+        }
     }
 }
