@@ -25,6 +25,7 @@ class BluetoothConnection(
     private val activity: ComponentActivity,
     private val onDeviceFound: (BluetoothDeviceInfo) -> Unit
 ) {
+
     private var bluetoothGatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private val bluetoothManager = activity.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager

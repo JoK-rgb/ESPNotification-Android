@@ -1,28 +1,66 @@
 package com.example.notificationlistener
 
 import android.app.AlertDialog
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.provider.Settings
 import android.view.LayoutInflater
 import android.widget.Button
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.annotation.RequiresApi
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.notificationlistener.Bluetooth.BluetoothDeviceAdapter
 import com.example.notificationlistener.Bluetooth.BluetoothDeviceInfo
+import com.example.notificationlistener.Bluetooth.BluetoothService
 
 class MainActivity : ComponentActivity() {
-
     private lateinit var bluetoothConnection: BluetoothConnection
     private lateinit var deviceAdapter: BluetoothDeviceAdapter
     private var deviceDialog: AlertDialog? = null
+    private var bluetoothService: BluetoothService? = null
+    private var bound = false
 
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(className: ComponentName, service: IBinder) {
+            val binder = service as BluetoothService.LocalBinder
+            bluetoothService = binder.getService()
+            bound = true
+        }
+
+        override fun onServiceDisconnected(arg0: ComponentName) {
+            bluetoothService = null
+            bound = false
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Initialize the BluetoothConnection. Discovered devices are forwarded to the adapter.
+        // Start and bind to the Bluetooth service
+        try {
+            Intent(this, BluetoothService::class.java).also { intent ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            }
+        } catch (e: Exception) {
+            // Handle service start failure
+            Toast.makeText(this, "Failed to start Bluetooth service", Toast.LENGTH_SHORT).show()
+        }
+
+        // Initialize the BluetoothConnection
         bluetoothConnection = BluetoothConnection(this) { device ->
             if (::deviceAdapter.isInitialized) {
                 deviceAdapter.addDevice(device)
@@ -94,8 +132,8 @@ class MainActivity : ComponentActivity() {
             .setTitle("Connect to Device")
             .setMessage("Would you like to connect to ${device.name}?")
             .setPositiveButton("Yes") { dialog, _ ->
-                // Use the BluetoothConnection to handle the connection.
-                bluetoothConnection.connectToDevice(device.address)
+                // Use the BluetoothService instead of BluetoothConnection
+                bluetoothService?.connectToDevice(device.address)
                 dialog.dismiss()
                 bluetoothConnection.stopBluetoothScan()
                 deviceDialog?.dismiss()
@@ -113,7 +151,12 @@ class MainActivity : ComponentActivity() {
         if (bluetoothConnection.isScanning) {
             bluetoothConnection.stopBluetoothScan()
         }
+        if (bound) {
+            unbindService(connection)
+            bound = false
+        }
         deviceDialog?.dismiss()
         deviceDialog = null
     }
 }
+
