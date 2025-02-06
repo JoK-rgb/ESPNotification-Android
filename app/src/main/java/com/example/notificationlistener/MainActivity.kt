@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
                     startService(intent)
                 }
                 bindService(intent, connection, Context.BIND_AUTO_CREATE)
+                bluetoothService?.requestBatteryOptimization()
             }
         } catch (e: Exception) {
             // Handle service start failure
@@ -79,6 +80,8 @@ class MainActivity : ComponentActivity() {
             }
             bluetoothConnection.checkBluetoothPermissions()
         }
+
+
     }
 
     /**

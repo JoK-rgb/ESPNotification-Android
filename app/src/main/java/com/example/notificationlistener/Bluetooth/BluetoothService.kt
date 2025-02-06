@@ -16,6 +16,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -46,6 +47,23 @@ class BluetoothService : Service() {
     override fun onCreate() {
         super.onCreate()
         initializeBluetooth()
+        startForegroundService()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val restartServiceIntent = Intent(applicationContext, BluetoothService::class.java).also {
+            it.setPackage(packageName)
+        }
+        startService(restartServiceIntent)
+        super.onTaskRemoved(rootIntent)
+    }
+
+    fun requestBatteryOptimization() {
+        val intent = Intent().apply {
+            action = android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+            data = Uri.parse("package:$packageName")
+        }
+        startActivity(intent)
     }
 
     private fun initializeBluetooth() {
