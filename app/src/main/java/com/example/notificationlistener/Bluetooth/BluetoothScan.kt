@@ -2,10 +2,6 @@ package com.example.notificationlistener
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothGatt
-import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
@@ -19,15 +15,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.annotation.RequiresApi
 import com.example.notificationlistener.Bluetooth.BluetoothDeviceInfo
-import java.util.UUID
 
-class BluetoothConnection(
+class BluetoothScan(
     private val activity: ComponentActivity,
     private val onDeviceFound: (BluetoothDeviceInfo) -> Unit
 ) {
-
-    private var bluetoothGatt: BluetoothGatt? = null
-    private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private val bluetoothManager = activity.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter = bluetoothManager.adapter
 
@@ -35,7 +27,7 @@ class BluetoothConnection(
         private set
 
     companion object {
-        var instance: BluetoothConnection? = null
+        var instance: BluetoothScan? = null
     }
 
     init {
@@ -179,72 +171,6 @@ class BluetoothConnection(
                 "Failed to stop scanning: ${e.message}",
                 Toast.LENGTH_SHORT
             ).show()
-        }
-    }
-
-    private val gattCallback = object : BluetoothGattCallback() {
-        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-            if (newState == BluetoothGatt.STATE_CONNECTED) {
-                activity.runOnUiThread {
-                    Toast.makeText(activity, "Connected to device", Toast.LENGTH_SHORT).show()
-                }
-                // Discover services when connected.
-                if (ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
-                    bluetoothGatt?.discoverServices()
-                } else {
-                    Toast.makeText(activity, "Bluetooth connect permission not granted", Toast.LENGTH_SHORT).show()
-                }
-            } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                activity.runOnUiThread {
-                    Toast.makeText(activity, "Disconnected from device", Toast.LENGTH_SHORT).show()
-                }
-                bluetoothGatt = null
-                rxCharacteristic = null
-            }
-        }
-
-        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                val uartService = gatt.getService(UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E"))
-                if (uartService != null) {
-                    rxCharacteristic = uartService.getCharacteristic(UUID.fromString("6E400002-B5A3-F393-E0A9-E50E24DCCA9E"))
-                    rxCharacteristic?.let {
-                        sendData("Connected to App")
-                    }
-                } else {
-                    activity.runOnUiThread {
-                        Toast.makeText(activity, "UART service not found", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-    }
-
-    fun connectToDevice(deviceAddress: String) {
-        val device: BluetoothDevice? = bluetoothAdapter.getRemoteDevice(deviceAddress)
-        if (device == null) {
-            Toast.makeText(activity, "Device not found", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
-            bluetoothGatt = device.connectGatt(activity, false, gattCallback)
-            stopBluetoothScan()
-        } else {
-            Toast.makeText(activity, "Bluetooth connect permission not granted", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun sendData(data: String) {
-        rxCharacteristic?.let { characteristic ->
-            characteristic.value = data.toByteArray()
-            if (ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
-                bluetoothGatt?.writeCharacteristic(characteristic)
-            } else {
-                Toast.makeText(activity, "Bluetooth connect permission not granted", Toast.LENGTH_SHORT).show()
-            }
-        } ?: run {
-            Toast.makeText(activity, "No RX characteristic available", Toast.LENGTH_SHORT).show()
         }
     }
 }

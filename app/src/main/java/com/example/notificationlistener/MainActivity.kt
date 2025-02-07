@@ -21,7 +21,7 @@ import com.example.notificationlistener.Bluetooth.BluetoothDeviceInfo
 import com.example.notificationlistener.Bluetooth.BluetoothService
 
 class MainActivity : ComponentActivity() {
-    private lateinit var bluetoothConnection: BluetoothConnection
+    private lateinit var bluetoothConnection: BluetoothScan
     private lateinit var deviceAdapter: BluetoothDeviceAdapter
     private var deviceDialog: AlertDialog? = null
     private var bluetoothService: BluetoothService? = null
@@ -45,7 +45,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Start and bind to the Bluetooth service
         try {
             Intent(this, BluetoothService::class.java).also { intent ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -57,23 +56,19 @@ class MainActivity : ComponentActivity() {
                 bluetoothService?.requestBatteryOptimization()
             }
         } catch (e: Exception) {
-            // Handle service start failure
             Toast.makeText(this, "Failed to start Bluetooth service", Toast.LENGTH_SHORT).show()
         }
 
-        // Initialize the BluetoothConnection
-        bluetoothConnection = BluetoothConnection(this) { device ->
+        bluetoothConnection = BluetoothScan(this) { device ->
             if (::deviceAdapter.isInitialized) {
                 deviceAdapter.addDevice(device)
             }
         }
 
-        // Button to allow notification listener permissions.
         findViewById<Button>(R.id.allowPermissionsButton).setOnClickListener {
             checkAndRequestNotificationPermission()
         }
 
-        // Button to start scanning for Bluetooth devices.
         findViewById<Button>(R.id.scanBluetoothButton).setOnClickListener {
             if (!bluetoothConnection.isScanning) {
                 showDeviceDialog()

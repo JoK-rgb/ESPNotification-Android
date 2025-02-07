@@ -9,7 +9,6 @@ import android.os.IBinder
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.example.notificationlistener.Bluetooth.BluetoothService
-import com.example.notificationlistener.BluetoothConnection
 
 class NotificationListener : NotificationListenerService() {
     private var componentName: ComponentName? = null
