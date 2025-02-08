@@ -74,24 +74,6 @@ class NotificationListener : NotificationListenerService() {
         componentName?.let { requestRebind(it) }
     }
 
-    private fun restartNotificationListener() {
-        val pm = packageManager
-        if (componentName == null) {
-            componentName = ComponentName(this, this::class.java)
-        }
-
-        pm.setComponentEnabledSetting(
-            componentName!!,
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP
-        )
-        pm.setComponentEnabledSetting(
-            componentName!!,
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            PackageManager.DONT_KILL_APP
-        )
-    }
-
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         try {
             val packageName = sbn?.packageName ?: return

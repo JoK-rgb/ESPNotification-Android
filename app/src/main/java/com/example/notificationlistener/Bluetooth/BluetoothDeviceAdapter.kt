@@ -45,7 +45,7 @@ class BluetoothDeviceAdapter (private val onDeviceClick: (BluetoothDeviceInfo) -
     }
 
     init {
-        // Start the cleanup routine
+        // Start the cleanup routine of device in scan list
         handler.post(cleanupRunnable)
     }
 

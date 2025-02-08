@@ -20,18 +20,29 @@ import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.notificationlistener.MainActivity
 import java.util.UUID
 
 class BluetoothService : Service() {
+
+    interface ConnectionStateListener {
+        fun onConnectionStateChanged(isConnected: Boolean)
+        fun onServiceStateChanged(isRunning: Boolean)
+    }
+
+    private var connectionStateListener: ConnectionStateListener? = null
+
     private var bluetoothGatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var bluetoothManager: BluetoothManager? = null
     private var bluetoothAdapter: BluetoothAdapter? = null
     private val binder = LocalBinder()
-    private var isConnected = false
+
+    var isConnected = false
+    var isRunning = false
 
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "BluetoothServiceChannel"
@@ -46,8 +57,11 @@ class BluetoothService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        initializeBluetooth()
-        startForegroundService()
+        startService()
+    }
+
+    fun setConnectionStateListener(listener: ConnectionStateListener) {
+        connectionStateListener = listener
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -147,6 +161,7 @@ class BluetoothService : Service() {
                 BluetoothProfile.STATE_CONNECTED -> {
                     isConnected = true
                     updateNotification("Connected to device")
+                    connectionStateListener?.onConnectionStateChanged(true)
                     if (ContextCompat.checkSelfPermission(
                             this@BluetoothService,
                             Manifest.permission.BLUETOOTH_CONNECT
@@ -158,10 +173,17 @@ class BluetoothService : Service() {
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     isConnected = false
                     updateNotification("Disconnected from device")
+                    connectionStateListener?.onConnectionStateChanged(false)
+
+                    // Clean up resources
+                    bluetoothGatt?.close()
                     bluetoothGatt = null
                     rxCharacteristic = null
-                    // Attempt to reconnect
-                    reconnect()
+
+                    // Attempt to reconnect only if service is still running
+                    if (isRunning) {
+                        reconnect()
+                    }
                 }
             }
         }
@@ -245,17 +267,45 @@ class BluetoothService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            try {
-                bluetoothGatt?.close()
-            } catch (e: Exception) {
-                // Handle close failure
+        stopService()
+    }
+
+    fun stopService() {
+        try {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                return
             }
+
+            // Properly clean up GATT connection
+            bluetoothGatt?.let { gatt ->
+                gatt.disconnect()
+                // Wait for disconnect to complete
+                Thread.sleep(100)
+                gatt.close()
+            }
+
+            bluetoothGatt = null
+            rxCharacteristic = null
+
+            isConnected = false
+            isRunning = false
+
+            // Notify state changes
+            connectionStateListener?.onConnectionStateChanged(false)
+            connectionStateListener?.onServiceStateChanged(false)
+
+            stopForeground(true)
+            stopSelf()
+        } catch (e: Exception) {
+            // Handle cleanup errors
+            updateNotification("Error stopping service: ${e.message}")
         }
-        bluetoothGatt = null
+    }
+
+    fun startService() {
+        initializeBluetooth()
+        startForegroundService()
+
+        isRunning = true;
     }
 }

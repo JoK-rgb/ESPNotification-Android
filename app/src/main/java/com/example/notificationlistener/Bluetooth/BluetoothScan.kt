@@ -67,11 +67,7 @@ class BluetoothScan(
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             super.onScanResult(callbackType, result)
             try {
-                if (ContextCompat.checkSelfPermission(
-                        activity,
-                        Manifest.permission.BLUETOOTH_CONNECT
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
+                if (ContextCompat.checkSelfPermission(activity,Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
                     val deviceName = result.device.name
                     val deviceAddress = result.device.address
                     if (result.isConnectable && !deviceName.isNullOrEmpty()) {
@@ -87,11 +83,7 @@ class BluetoothScan(
                     }
                 } else {
                     activity.runOnUiThread {
-                        Toast.makeText(
-                            activity,
-                            "Bluetooth connect permission not granted",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(activity,"Bluetooth connect permission not granted",Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: SecurityException) {
