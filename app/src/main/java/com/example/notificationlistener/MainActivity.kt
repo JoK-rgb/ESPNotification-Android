@@ -14,12 +14,18 @@ import android.os.IBinder
 import android.provider.Settings
 import android.view.LayoutInflater
 import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_CONNECTED
+import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_CONNECTED_TO_DEVICE
+import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_DISCONNECTED
+import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_START_SERVICE
+import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_STOP_SERVICE
 import com.example.notificationlistener.Bluetooth.BluetoothDeviceAdapter
 import com.example.notificationlistener.Bluetooth.BluetoothDeviceInfo
 import com.example.notificationlistener.Bluetooth.BluetoothService
@@ -32,6 +38,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var deviceAdapter: BluetoothDeviceAdapter
     private lateinit var connectDeviceButton: Button
     private lateinit var toggleServiceButton: Button
+    private lateinit var connectionStatusText: TextView
 
     private var deviceDialog: AlertDialog? = null
     private var progressDialog: AlertDialog? = null
@@ -79,6 +86,9 @@ class MainActivity : ComponentActivity() {
         setupBluetoothService()
         setupBluetoothScanning()
         setupClickListeners()
+
+        connectionStatusText = findViewById(R.id.connectionStatusText)
+        connectionStatusText.text = BL_DISCONNECTED
     }
 
     private fun initializeViews() {
@@ -161,15 +171,17 @@ class MainActivity : ComponentActivity() {
 
     private fun updateConnectionStatus(isConnected: Boolean) {
         connectDeviceButton.isEnabled = !isConnected && bluetoothService?.isRunning == true
+        connectionStatusText.text = if(!isConnected && bluetoothService?.isRunning == true)
+            BL_CONNECTED else BL_DISCONNECTED
 
-        val message = if (isConnected) "Connected to device" else "Disconnected"
+        val message = if (isConnected) BL_CONNECTED_TO_DEVICE else BL_DISCONNECTED
+        connectionStatusText.text = if(isConnected) BL_CONNECTED else BL_DISCONNECTED
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun updateServiceStatus(isRunning: Boolean) {
         connectDeviceButton.isEnabled = isRunning
-
-        toggleServiceButton.text = if (isRunning) "Stop Service" else "Start Service"
+        toggleServiceButton.text = if (isRunning) BL_STOP_SERVICE else BL_START_SERVICE
         toggleServiceButton.backgroundTintList = ColorStateList.valueOf(
             if (isRunning) Color.RED else Color.GREEN
         )

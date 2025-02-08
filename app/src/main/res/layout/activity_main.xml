@@ -32,4 +32,14 @@
         android:layout_marginBottom="20dp"
         android:text="Stop Service" />
 
+    <TextView
+        android:id="@+id/connectionStatusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_alignParentBottom="true"
+        android:text="disconnected"
+        android:gravity="center"
+        android:textColor="@color/white"/>
+
 </RelativeLayout>
