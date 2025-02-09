@@ -88,7 +88,7 @@ class NotificationListener : NotificationListenerService() {
             val title = extras?.getCharSequence("android.title")?.toString() ?: "No Title"
             val text = extras?.getCharSequence("android.text")?.toString() ?: "No Text"
 
-            sendData("$appName: $title - $text")
+            sendData("$appName||$title||$text")
         } catch (e: Exception) {
             Log.e("NotificationListener", "Error processing notification: ${e.message}")
         }
@@ -98,7 +98,7 @@ class NotificationListener : NotificationListenerService() {
         if (bound && bluetoothService != null) {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val byteArray = replaceUmlauts(data).toByteArray(Charsets.ISO_8859_1)
+                    val byteArray = trimToCharacterAt(replaceUmlauts(data), 150).toByteArray(Charsets.ISO_8859_1)
                     bluetoothService?.sendData(byteArray)
                 } catch (e: Exception) {
                     Log.e("NotificationListener", "Error sending data: ${e.message}")
@@ -118,6 +118,10 @@ class NotificationListener : NotificationListenerService() {
             .replace("ö", "\u0094")  // CP437 for ö (0x94)
             .replace("ü", "\u0081")  // CP437 for ü (0x81)
             .replace("ß", "\u00E1")  // CP437 for ß (0xE1)
+    }
+
+    private fun trimToCharacterAt(message: String, characterNumber: Int) : String {
+        return message.take(characterNumber)
     }
 
     override fun onDestroy() {

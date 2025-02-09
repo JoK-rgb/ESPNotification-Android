@@ -196,7 +196,7 @@ class BluetoothService : Service() {
                 if (uartService != null) {
                     rxCharacteristic = uartService.getCharacteristic(UUID.fromString(RX_CHAR_UUID))
                     rxCharacteristic?.let {
-                        sendData("Service Connected".toByteArray())
+                        sendData("||||Service Connected".toByteArray())
                     }
                 }
             }
