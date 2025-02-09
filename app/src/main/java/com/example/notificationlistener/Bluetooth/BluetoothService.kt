@@ -16,26 +16,28 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
+import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.notificationlistener.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 class BluetoothService : Service() {
-
-    interface ConnectionStateListener {
-        fun onConnectionStateChanged(isConnected: Boolean)
-        fun onServiceStateChanged(isRunning: Boolean)
-    }
-
-    var connectionStateListener: ConnectionStateListener? = null
-        set(value) {
-            field = value
-        }
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     private var bluetoothGatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
@@ -43,30 +45,50 @@ class BluetoothService : Service() {
     private var bluetoothAdapter: BluetoothAdapter? = null
     private val binder = LocalBinder()
 
-    var isConnected = false
-    var isRunning = false
+    var isActive = false
+        get() {
+            return field
+        }
+
+    sealed class ConnectionState {
+        object Connected : ConnectionState()
+        object Disconnected : ConnectionState()
+        data class Error(val message: String) : ConnectionState()
+    }
 
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "BluetoothServiceChannel"
         private const val NOTIFICATION_ID = 1
         private const val SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
         private const val RX_CHAR_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+        private const val RECONNECTION_ATTEMPTS = 3
+        private const val RECONNECTION_DELAY = 1000L // 1 second
     }
 
     inner class LocalBinder : Binder() {
         fun getService(): BluetoothService = this@BluetoothService
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        startService()
+    fun startService() {
+        isActive = true
+        initializeBluetooth()
+        updateServiceState(ConnectionState.Disconnected)
     }
 
-    fun startService() {
-        initializeBluetooth()
-        startForegroundService()
-        isRunning = true;
+    fun stopService() {
+        isActive = false
+        disconnect()
+        updateServiceState(ConnectionState.Disconnected)
     }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    @SuppressLint("ForegroundServiceType")
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForeground(NOTIFICATION_ID, createNotification("Bluetooth Service Running"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        return START_STICKY
+    }
+
+    override fun onBind(intent: Intent): IBinder = binder
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val restartServiceIntent = Intent(applicationContext, BluetoothService::class.java).also {
@@ -76,47 +98,51 @@ class BluetoothService : Service() {
         super.onTaskRemoved(rootIntent)
     }
 
-    fun requestBatteryOptimization() {
-        val intent = Intent().apply {
-            action = android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-            data = Uri.parse("package:$packageName")
+    private fun initializeBluetooth() {
+        if (!hasBluetoothPermissions()) {
+            updateServiceState(ConnectionState.Error("Missing Bluetooth permissions"))
+            return
         }
-        startActivity(intent)
+
+        bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        bluetoothAdapter = bluetoothManager?.adapter ?: run {
+            updateServiceState(ConnectionState.Error("Bluetooth not available"))
+            return
+        }
+
+        createNotificationChannel()
     }
 
-    private fun initializeBluetooth() {
-        try {
-            bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-            bluetoothAdapter = bluetoothManager?.adapter
-
-            if (bluetoothAdapter == null) {
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val channel = NotificationChannel(
+                    NOTIFICATION_CHANNEL_ID,
+                    "Bluetooth Service",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Maintains Bluetooth connection"
+                }
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.createNotificationChannel(channel)
+            } catch (e: Exception) {
+                updateServiceState(ConnectionState.Error("Failed to create notification channel"))
                 stopSelf()
-                return
             }
-
-            createNotificationChannel()
-            startForegroundService()
-        } catch (e: Exception) {
-            stopSelf()
-            updateNotification("Error initializing Bluetooth")
         }
     }
 
     private fun createNotification(message: String): Notification {
         val pendingIntent = Intent(this, MainActivity::class.java).let { notificationIntent ->
             PendingIntent.getActivity(
-                this, 0, notificationIntent,
+                this,
+                0,
+                notificationIntent,
                 PendingIntent.FLAG_IMMUTABLE
             )
         }
 
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-        } else {
-            NotificationCompat.Builder(this)
-        }
-
-        return builder
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Bluetooth Service")
             .setContentText(message)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
@@ -124,67 +150,27 @@ class BluetoothService : Service() {
             .build()
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID,"Bluetooth Service",NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Maintains Bluetooth connection"
-                }
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.createNotificationChannel(channel)
-            } catch (e: Exception) {
-                updateNotification("Notification creation failure")
-                stopSelf()
-            }
-        }
-    }
-
-    @SuppressLint("ForegroundServiceType")
-    private fun startForegroundService() {
-        try {
-            startForeground(NOTIFICATION_ID, createNotification("Bluetooth Service Running"))
-        } catch (e: Exception) {
-            stopSelf()
-            updateNotification("Error running Bluetooth service")
-        }
-    }
-
-    @SuppressLint("ForegroundServiceType")
-    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        try {
-            startForeground(1, createNotification("Bluetooth is running in the background"))
-        } catch (e: Exception) {
-            updateNotification("Error starting Bluetooth service")
-        }
-        return START_STICKY
-    }
-
-    override fun onBind(intent: Intent): IBinder {
-        return binder
-    }
-
     private val gattCallback = object : BluetoothGattCallback() {
+        private var reconnectionAttempts = 0
+
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    isConnected = true
-                    updateNotification("Connected to device")
-                    connectionStateListener?.onConnectionStateChanged(true)
-                    checkPermissions()
-                    bluetoothGatt?.discoverServices()
+                    updateServiceState(ConnectionState.Connected)
+                    reconnectionAttempts = 0
+                    gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    isConnected = false
-                    updateNotification("Disconnected from device")
-                    connectionStateListener?.onConnectionStateChanged(false)
+                    updateServiceState(ConnectionState.Disconnected)
+                    disconnectGatt()
 
-                    bluetoothGatt?.close()
-                    bluetoothGatt = null
-                    rxCharacteristic = null
-
-                    if (isRunning) {
-                        reconnect()
+                    if (reconnectionAttempts < RECONNECTION_ATTEMPTS) {
+                        reconnectionAttempts++
+                        serviceScope.launch {
+                            kotlinx.coroutines.delay(RECONNECTION_DELAY)
+                            reconnect()
+                        }
                     }
                 }
             }
@@ -193,101 +179,111 @@ class BluetoothService : Service() {
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 val uartService = gatt.getService(UUID.fromString(SERVICE_UUID))
-                if (uartService != null) {
-                    rxCharacteristic = uartService.getCharacteristic(UUID.fromString(RX_CHAR_UUID))
-                    rxCharacteristic?.let {
-                        sendData("Service Connected".toByteArray())
-                    }
+                rxCharacteristic = uartService?.getCharacteristic(UUID.fromString(RX_CHAR_UUID))
+                rxCharacteristic?.let {
+                    sendData("Service Connected".toByteArray())
                 }
+            } else {
+                updateServiceState(ConnectionState.Error("Failed to discover services"))
             }
-        }
-    }
-
-    private fun updateNotification(message: String) {
-        try {
-            val notification = createNotification(message)
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(NOTIFICATION_ID, notification)
-        } catch (e: Exception) {
-            updateNotification("Notification update failure")
         }
     }
 
     @SuppressLint("MissingPermission")
     fun connectToDevice(deviceAddress: String) {
-        checkPermissions()
+        if (!hasBluetoothPermissions()) {
+            updateServiceState(ConnectionState.Error("Missing Bluetooth permissions"))
+            return
+        }
 
         try {
-            val device = bluetoothAdapter?.getRemoteDevice(deviceAddress)
-            device?.let {
-                bluetoothGatt = it.connectGatt(this, true, gattCallback)
+            bluetoothAdapter?.getRemoteDevice(deviceAddress)?.let { device ->
+                bluetoothGatt = device.connectGatt(this, true, gattCallback)
+            } ?: run {
+                updateServiceState(ConnectionState.Error("Device not found"))
             }
         } catch (e: Exception) {
-            updateNotification("Failed to connect to device")
+            updateServiceState(ConnectionState.Error("Failed to connect: ${e.message}"))
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun reconnect() {
-        bluetoothGatt?.let { gatt ->
-            checkPermissions()
+        if (!hasBluetoothPermissions()) return
 
-           try {
-                gatt.connect()
-            } catch (e: Exception) {
-                updateNotification("Reconnection error")
-            }
+        bluetoothGatt?.connect() ?: run {
+            updateServiceState(ConnectionState.Error("No device to reconnect to"))
         }
     }
 
+    @SuppressLint("MissingPermission")
     fun sendData(data: ByteArray) {
-        if (!isConnected) return
+        if (connectionState.value !is ConnectionState.Connected) return
 
         rxCharacteristic?.let { characteristic ->
             try {
                 characteristic.value = data
-                if (ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+                if (hasBluetoothPermissions()) {
                     bluetoothGatt?.writeCharacteristic(characteristic)
                 }
             } catch (e: Exception) {
-                updateNotification("Error sending data")
+                updateServiceState(ConnectionState.Error("Failed to send data: ${e.message}"))
             }
         }
+    }
+
+    private fun hasBluetoothPermissions(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.BLUETOOTH_CONNECT
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun updateServiceState(state: ConnectionState) {
+        serviceScope.launch {
+            _connectionState.emit(state)
+            updateNotification(getNotificationMessage(state))
+        }
+    }
+
+    private fun getNotificationMessage(state: ConnectionState): String = when (state) {
+        is ConnectionState.Connected -> "Connected to device"
+        is ConnectionState.Disconnected -> "Disconnected from device"
+        is ConnectionState.Error -> "Error: ${state.message}"
+    }
+
+    private fun updateNotification(message: String) {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.notify(NOTIFICATION_ID, createNotification(message))
+        } catch (e: Exception) {
+            // Log error but don't update notification to avoid recursive calls
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun disconnectGatt() {
+        if (hasBluetoothPermissions()) {
+            bluetoothGatt?.disconnect()
+            bluetoothGatt?.close()
+        }
+        bluetoothGatt = null
+        rxCharacteristic = null
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        stopService()
+        serviceScope.cancel()
+        disconnectGatt()
+        stopForeground(true)
     }
 
-    @SuppressLint("MissingPermission")
-    fun stopService() {
-        try {
-            checkPermissions()
-
-            bluetoothGatt?.let { gatt ->
-                gatt.disconnect()
-                gatt.close()
-                bluetoothGatt = null
-            }
-
-            rxCharacteristic = null
-            isConnected = false
-            isRunning = false
-
-            connectionStateListener?.onConnectionStateChanged(false)
-            connectionStateListener?.onServiceStateChanged(false)
-
-            stopForeground(true)
-            stopSelf()
-        } catch (e: Exception) {
-            updateNotification("Error stopping service")
-        }
+    fun isConnected(): Boolean {
+        return connectionState.value is ConnectionState.Connected
     }
 
-    private fun checkPermissions() {
-        if (ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            updateNotification("Missing Bluetooth permissions")
-        }
+    fun disconnect() {
+        disconnectGatt()
+        updateServiceState(ConnectionState.Disconnected)
     }
 }

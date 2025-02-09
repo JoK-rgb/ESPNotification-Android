@@ -21,14 +21,12 @@ import androidx.annotation.RequiresApi
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_CONNECTED
-import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_CONNECTED_TO_DEVICE
-import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_DISCONNECTED
 import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_START_SERVICE
 import com.example.notificationlistener.Bluetooth.BluetoothConstants.Companion.BL_STOP_SERVICE
 import com.example.notificationlistener.Bluetooth.BluetoothDeviceAdapter
 import com.example.notificationlistener.Bluetooth.BluetoothDeviceInfo
 import com.example.notificationlistener.Bluetooth.BluetoothService
+import com.example.notificationlistener.Bluetooth.BluetoothService.ConnectionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,35 +43,19 @@ class MainActivity : ComponentActivity() {
     private var bluetoothService: BluetoothService? = null
     private var bound = false
 
-    private val connectionStateListener = object : BluetoothService.ConnectionStateListener {
-        override fun onConnectionStateChanged(isConnected: Boolean) {
-            runOnUiThread {
-                updateConnectionStatus(isConnected)
-            }
-        }
-
-        override fun onServiceStateChanged(isRunning: Boolean) {
-            runOnUiThread {
-                updateServiceStatus(isRunning)
-            }
-        }
-    }
-
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
             val binder = service as BluetoothService.LocalBinder
             bluetoothService = binder.getService()
             bound = true
-            bluetoothService?.connectionStateListener = connectionStateListener
-            updateServiceStatus(bluetoothService?.isRunning == true)
-            updateConnectionStatus(bluetoothService?.isConnected == true)
+
+            observeConnectionState()
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
             bluetoothService = null
             bound = false
-            updateServiceStatus(false)
-            updateConnectionStatus(false)
+            updateUIState(ConnectionState.Disconnected)
         }
     }
 
@@ -86,14 +68,14 @@ class MainActivity : ComponentActivity() {
         setupBluetoothService()
         setupBluetoothScanning()
         setupClickListeners()
-
-        connectionStatusText = findViewById(R.id.connectionStatusText)
-        connectionStatusText.text = BL_DISCONNECTED
     }
 
     private fun initializeViews() {
         connectDeviceButton = findViewById(R.id.scanBluetoothButton)
         toggleServiceButton = findViewById(R.id.toggleServiceButton)
+        connectionStatusText = findViewById(R.id.connectionStatusText)
+        connectionStatusText.text = "Disconnected"
+        connectDeviceButton.isEnabled = false
     }
 
     private fun setupBluetoothService() {
@@ -105,10 +87,17 @@ class MainActivity : ComponentActivity() {
                     startService(intent)
                 }
                 bindService(intent, connection, Context.BIND_AUTO_CREATE)
-                bluetoothService?.requestBatteryOptimization()
             }
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to start Bluetooth service", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun observeConnectionState() {
+        lifecycleScope.launch {
+            bluetoothService?.connectionState?.collect { state ->
+                updateUIState(state)
+            }
         }
     }
 
@@ -138,57 +127,57 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleServiceToggle() {
-        if (isBluetoothServiceRunning()) {
-            lifecycleScope.launch(Dispatchers.Main) {
-                stopBluetoothService()
-            }
-        } else {
-            startBluetoothService()
-        }
-    }
-
-    private suspend fun stopBluetoothService() {
-        bluetoothService?.let { service ->
-            if (service.isConnected) {
-                showProgressDialog("Disconnecting device...")
+        lifecycleScope.launch(Dispatchers.Main) {
+            if (bound) {
+                showProgressDialog("Processing...")
                 withContext(Dispatchers.IO) {
-                    service.stopService()
+                    if (bluetoothService?.isConnected() == true) {
+                        bluetoothService?.stopService()
+                    } else {
+                        bluetoothService?.startService()
+                    }
                 }
+                updateUIForServiceState(bluetoothService?.isActive == true)
                 dismissProgressDialog()
-            } else {
-                service.stopService()
             }
-
-            BluetoothScan.instance?.stopBluetoothScan()
-            updateServiceStatus(false)
         }
     }
 
-    private fun startBluetoothService() {
-        bluetoothService?.startService()
-        updateServiceStatus(true)
+    private fun updateUIForServiceState(isRunning: Boolean) {
+        updateServiceButtonState(isRunning)
+        connectDeviceButton.isEnabled = isRunning && !bluetoothService?.isConnected()!!
     }
 
-    private fun updateConnectionStatus(isConnected: Boolean) {
-        connectDeviceButton.isEnabled = !isConnected && bluetoothService?.isRunning == true
-        connectionStatusText.text = if(!isConnected && bluetoothService?.isRunning == true)
-            BL_CONNECTED else BL_DISCONNECTED
-
-        val message = if (isConnected) BL_CONNECTED_TO_DEVICE else BL_DISCONNECTED
-        connectionStatusText.text = if(isConnected) BL_CONNECTED else BL_DISCONNECTED
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun updateServiceStatus(isRunning: Boolean) {
-        connectDeviceButton.isEnabled = isRunning
+    private fun updateServiceButtonState(isRunning: Boolean) {
         toggleServiceButton.text = if (isRunning) BL_STOP_SERVICE else BL_START_SERVICE
         toggleServiceButton.backgroundTintList = ColorStateList.valueOf(
             if (isRunning) Color.RED else Color.GREEN
         )
     }
 
-    private fun isBluetoothServiceRunning(): Boolean {
-        return bluetoothService?.isRunning == true
+    private fun updateUIState(state: ConnectionState) {
+        runOnUiThread {
+            when (state) {
+                is ConnectionState.Connected -> {
+                    connectDeviceButton.isEnabled = false
+                    connectionStatusText.text = "Connected"
+                    updateServiceButtonState(true)
+                    Toast.makeText(this, "Connected to device", Toast.LENGTH_SHORT).show()
+                }
+                is ConnectionState.Disconnected -> {
+                    // Only enable connect button if service is running
+                    connectDeviceButton.isEnabled = bluetoothService?.isActive == true
+                    connectionStatusText.text = "Disconnected"
+                    updateServiceButtonState(bluetoothService?.isActive == true)
+                }
+                is ConnectionState.Error -> {
+                    connectDeviceButton.isEnabled = bluetoothService?.isActive == true
+                    connectionStatusText.text = "Error"
+                    updateServiceButtonState(bluetoothService?.isActive == true)
+                    Toast.makeText(this, state.message, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun checkAndRequestNotificationPermission() {
@@ -242,18 +231,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showProgressDialog(message: String) {
-        progressDialog?.dismiss()
-        progressDialog = AlertDialog.Builder(this)
-            .setMessage(message)
-            .setCancelable(false)
-            .create()
-        progressDialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        progressDialog?.show()
+        runOnUiThread {
+            progressDialog?.dismiss()
+            progressDialog = AlertDialog.Builder(this)
+                .setMessage(message)
+                .setCancelable(false)
+                .create()
+            progressDialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            progressDialog?.show()
+        }
     }
 
     private fun dismissProgressDialog() {
-        progressDialog?.dismiss()
-        progressDialog = null
+        runOnUiThread {
+            progressDialog?.dismiss()
+            progressDialog = null
+        }
     }
 
     override fun onDestroy() {
@@ -275,4 +268,3 @@ class MainActivity : ComponentActivity() {
         progressDialog = null
     }
 }
-

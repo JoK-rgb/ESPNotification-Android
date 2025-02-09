@@ -15,6 +15,7 @@
     <!-- Notifications Permissions -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <application
         android:allowBackup="true"
@@ -60,10 +61,9 @@
         <!-- Bluetooth Service -->
         <service
             android:name=".Bluetooth.BluetoothService"
-            android:enabled="true"
+            android:foregroundServiceType="connectedDevice"
             android:exported="false"
-            android:permission="android.permission.BLUETOOTH_ADMIN">
-        </service>
+            tools:ignore="ForegroundServicePermission" />
 
     </application>
 
