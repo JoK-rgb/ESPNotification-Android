@@ -102,19 +102,6 @@ class BluetoothService : Service() {
         }
     }
 
-
-    /*
-    private fun createNotification(): Notification {
-        val notificationBuilder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Bluetooth Service")
-            .setContentText("Bluetooth is running in the background")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .setOngoing(true)
-
-        return notificationBuilder.build()
-    }
-    */
-
     private fun createNotification(message: String): Notification {
         val pendingIntent = Intent(this, MainActivity::class.java).let { notificationIntent ->
             PendingIntent.getActivity(
