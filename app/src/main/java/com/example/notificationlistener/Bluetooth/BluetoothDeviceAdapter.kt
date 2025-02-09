@@ -21,14 +21,13 @@ class BluetoothDeviceAdapter (private val onDeviceClick: (BluetoothDeviceInfo) -
     private val devices = ConcurrentHashMap<String, BluetoothDeviceInfo>()
     private val devicesList = mutableListOf<BluetoothDeviceInfo>()
     private val handler = Handler(Looper.getMainLooper())
-    private val DEVICE_TIMEOUT = 3000L // 3 seconds timeout
+    private val DEVICE_TIMEOUT = 3000L
 
     private val cleanupRunnable = object : Runnable {
         override fun run() {
             val currentTime = System.currentTimeMillis()
             var hasRemovals = false
 
-            // Remove old devices
             devices.entries.removeIf { entry ->
                 val shouldRemove = currentTime - entry.value.lastSeen > DEVICE_TIMEOUT
                 if (shouldRemove) hasRemovals = true
@@ -39,13 +38,11 @@ class BluetoothDeviceAdapter (private val onDeviceClick: (BluetoothDeviceInfo) -
                 updateDevicesList()
             }
 
-            // Schedule next cleanup
             handler.postDelayed(this, 2000) // Run cleanup every 2 seconds
         }
     }
 
     init {
-        // Start the cleanup routine of device in scan list
         handler.post(cleanupRunnable)
     }
 
