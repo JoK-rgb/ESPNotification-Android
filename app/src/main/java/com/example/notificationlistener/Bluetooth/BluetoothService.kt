@@ -20,7 +20,6 @@ import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
-import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.notificationlistener.MainActivity
@@ -33,7 +32,10 @@ class BluetoothService : Service() {
         fun onServiceStateChanged(isRunning: Boolean)
     }
 
-    private var connectionStateListener: ConnectionStateListener? = null
+    var connectionStateListener: ConnectionStateListener? = null
+        set(value) {
+            field = value
+        }
 
     private var bluetoothGatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
@@ -60,8 +62,10 @@ class BluetoothService : Service() {
         startService()
     }
 
-    fun setConnectionStateListener(listener: ConnectionStateListener) {
-        connectionStateListener = listener
+    fun startService() {
+        initializeBluetooth()
+        startForegroundService()
+        isRunning = true;
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -94,58 +98,7 @@ class BluetoothService : Service() {
             startForegroundService()
         } catch (e: Exception) {
             stopSelf()
-        }
-    }
-
-    @SuppressLint("ForegroundServiceType")
-    private fun startForegroundService() {
-        try {
-            startForeground(NOTIFICATION_ID, createNotification("Bluetooth Service Running"))
-        } catch (e: Exception) {
-            stopSelf()
-        }
-    }
-
-    @SuppressLint("ForegroundServiceType")
-    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        try {
-            startForeground(1, createNotification())
-        } catch (e: Exception) {
-
-        }
-        return START_STICKY // Keeps the service running until explicitly stopped
-    }
-
-    private fun createNotification(): Notification {
-        val notificationBuilder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Bluetooth Service")
-            .setContentText("Bluetooth is running in the background")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .setOngoing(true)
-
-        return notificationBuilder.build()
-    }
-
-    override fun onBind(intent: Intent): IBinder {
-        return binder
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                val channel = NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    "Bluetooth Service",
-                    NotificationManager.IMPORTANCE_LOW
-                ).apply {
-                    description = "Maintains Bluetooth connection"
-                }
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.createNotificationChannel(channel)
-            } catch (e: Exception) {
-                // Handle notification channel creation failure
-                stopSelf()
-            }
+            updateNotification("Error initializing Bluetooth")
         }
     }
 
@@ -171,32 +124,65 @@ class BluetoothService : Service() {
             .build()
     }
 
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID,"Bluetooth Service",NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Maintains Bluetooth connection"
+                }
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.createNotificationChannel(channel)
+            } catch (e: Exception) {
+                updateNotification("Notification creation failure")
+                stopSelf()
+            }
+        }
+    }
+
+    @SuppressLint("ForegroundServiceType")
+    private fun startForegroundService() {
+        try {
+            startForeground(NOTIFICATION_ID, createNotification("Bluetooth Service Running"))
+        } catch (e: Exception) {
+            stopSelf()
+            updateNotification("Error running Bluetooth service")
+        }
+    }
+
+    @SuppressLint("ForegroundServiceType")
+    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
+        try {
+            startForeground(1, createNotification("Bluetooth is running in the background"))
+        } catch (e: Exception) {
+            updateNotification("Error starting Bluetooth service")
+        }
+        return START_STICKY
+    }
+
+    override fun onBind(intent: Intent): IBinder {
+        return binder
+    }
+
     private val gattCallback = object : BluetoothGattCallback() {
+        @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     isConnected = true
                     updateNotification("Connected to device")
                     connectionStateListener?.onConnectionStateChanged(true)
-                    if (ContextCompat.checkSelfPermission(
-                            this@BluetoothService,
-                            Manifest.permission.BLUETOOTH_CONNECT
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
-                        bluetoothGatt?.discoverServices()
-                    }
+                    checkPermissions()
+                    bluetoothGatt?.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     isConnected = false
                     updateNotification("Disconnected from device")
                     connectionStateListener?.onConnectionStateChanged(false)
 
-                    // Clean up resources
                     bluetoothGatt?.close()
                     bluetoothGatt = null
                     rxCharacteristic = null
 
-                    // Attempt to reconnect only if service is still running
                     if (isRunning) {
                         reconnect()
                     }
@@ -223,18 +209,13 @@ class BluetoothService : Service() {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.notify(NOTIFICATION_ID, notification)
         } catch (e: Exception) {
-            // Handle notification update failure
+            updateNotification("Notification update failure")
         }
     }
 
+    @SuppressLint("MissingPermission")
     fun connectToDevice(deviceAddress: String) {
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+        checkPermissions()
 
         try {
             val device = bluetoothAdapter?.getRemoteDevice(deviceAddress)
@@ -246,18 +227,15 @@ class BluetoothService : Service() {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun reconnect() {
         bluetoothGatt?.let { gatt ->
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.BLUETOOTH_CONNECT
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                try {
-                    gatt.connect()
-                } catch (e: Exception) {
-                    // Handle reconnection failure
-                }
+            checkPermissions()
+
+           try {
+                gatt.connect()
+            } catch (e: Exception) {
+                updateNotification("Reconnection error")
             }
         }
     }
@@ -272,7 +250,7 @@ class BluetoothService : Service() {
                     bluetoothGatt?.writeCharacteristic(characteristic)
                 }
             } catch (e: Exception) {
-                // Handle data sending failure
+                updateNotification("Error sending data")
             }
         }
     }
@@ -282,40 +260,36 @@ class BluetoothService : Service() {
         stopService()
     }
 
+    @SuppressLint("MissingPermission")
     fun stopService() {
         try {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                return
-            }
+            checkPermissions()
 
             bluetoothGatt?.let { gatt ->
                 gatt.disconnect()
+                // Wait for disconnect to complete
                 Thread.sleep(100)
                 gatt.close()
+                bluetoothGatt = null
             }
 
-            bluetoothGatt = null
             rxCharacteristic = null
-
             isConnected = false
             isRunning = false
 
-            // Notify state changes
             connectionStateListener?.onConnectionStateChanged(false)
             connectionStateListener?.onServiceStateChanged(false)
 
             stopForeground(true)
             stopSelf()
         } catch (e: Exception) {
-            // Handle cleanup errors
-            updateNotification("Error stopping service: ${e.message}")
+            updateNotification("Error stopping service")
         }
     }
 
-    fun startService() {
-        initializeBluetooth()
-        startForegroundService()
-
-        isRunning = true;
+    private fun checkPermissions() {
+        if (ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            updateNotification("Missing Bluetooth permissions")
+        }
     }
 }

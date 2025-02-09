@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
             val binder = service as BluetoothService.LocalBinder
             bluetoothService = binder.getService()
             bound = true
-            bluetoothService?.setConnectionStateListener(connectionStateListener)
+            bluetoothService?.connectionStateListener = connectionStateListener
             updateServiceStatus(bluetoothService?.isRunning == true)
             updateConnectionStatus(bluetoothService?.isConnected == true)
         }
@@ -81,6 +81,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        if (!isNotificationPermissionGranted()) {
+            checkAndRequestNotificationPermission()
+        }
 
         initializeViews()
         setupBluetoothService()
@@ -121,10 +125,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupClickListeners() {
-        findViewById<Button>(R.id.allowPermissionsButton).setOnClickListener {
-            checkAndRequestNotificationPermission()
-        }
-
         connectDeviceButton.setOnClickListener {
             if (!bluetoothConnection.isScanning) {
                 showDeviceDialog()
@@ -136,6 +136,13 @@ class MainActivity : ComponentActivity() {
             handleServiceToggle()
         }
     }
+
+    private fun isNotificationPermissionGranted(): Boolean {
+        val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        return enabledListeners.contains(packageName)
+    }
+
+
 
     private fun handleServiceToggle() {
         if (isBluetoothServiceRunning()) {
