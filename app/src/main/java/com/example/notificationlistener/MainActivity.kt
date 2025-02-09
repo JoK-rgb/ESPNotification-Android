@@ -82,6 +82,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        if (!isNotificationPermissionGranted()) {
+            checkAndRequestNotificationPermission()
+        }
+
         initializeViews()
         setupBluetoothService()
         setupBluetoothScanning()
@@ -121,10 +125,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupClickListeners() {
-        findViewById<Button>(R.id.allowPermissionsButton).setOnClickListener {
-            checkAndRequestNotificationPermission()
-        }
-
         connectDeviceButton.setOnClickListener {
             if (!bluetoothConnection.isScanning) {
                 showDeviceDialog()
@@ -136,6 +136,13 @@ class MainActivity : ComponentActivity() {
             handleServiceToggle()
         }
     }
+
+    private fun isNotificationPermissionGranted(): Boolean {
+        val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        return enabledListeners.contains(packageName)
+    }
+
+
 
     private fun handleServiceToggle() {
         if (isBluetoothServiceRunning()) {
