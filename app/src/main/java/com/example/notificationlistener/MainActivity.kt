@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
             val binder = service as BluetoothService.LocalBinder
             bluetoothService = binder.getService()
             bound = true
-            bluetoothService?.setConnectionStateListener(connectionStateListener)
+            bluetoothService?.connectionStateListener = connectionStateListener
             updateServiceStatus(bluetoothService?.isRunning == true)
             updateConnectionStatus(bluetoothService?.isConnected == true)
         }
