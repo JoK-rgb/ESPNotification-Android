@@ -8,7 +8,11 @@ import android.content.pm.PackageManager
 import android.os.IBinder
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import com.example.notificationlistener.Bluetooth.BluetoothService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class NotificationListener : NotificationListenerService() {
     private var componentName: ComponentName? = null
@@ -81,21 +85,40 @@ class NotificationListener : NotificationListenerService() {
             val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
             val appName = packageManager.getApplicationLabel(applicationInfo).toString()
 
-            // Extract notification content
             val extras = sbn.notification.extras
             val title = extras?.getCharSequence("android.title")?.toString() ?: "No Title"
             val text = extras?.getCharSequence("android.text")?.toString() ?: "No Text"
 
             sendData("$appName: $title - $text")
         } catch (e: Exception) {
-            // Handle any exceptions that might occur during notification processing
+            Log.e("NotificationListener", "Error processing notification: ${e.message}")
         }
     }
 
     private fun sendData(data: String) {
         if (bound && bluetoothService != null) {
-            bluetoothService?.sendData(data)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val byteArray = replaceUmlauts(data).toByteArray(Charsets.ISO_8859_1)
+                    bluetoothService?.sendData(byteArray)
+                } catch (e: Exception) {
+                    Log.e("NotificationListener", "Error sending data: ${e.message}")
+                }
+            }
+        } else {
+            Log.w("NotificationListener", "BluetoothService not bound or not available.")
         }
+    }
+
+    private fun replaceUmlauts(data: String) : String {
+        return data
+            .replace("Ä", "\u008E")  // CP437 for Ä (0x8E)
+            .replace("Ö", "\u0099")  // CP437 for Ö (0x99)
+            .replace("Ü", "\u009A")  // CP437 for Ü (0x9A)
+            .replace("ä", "\u0084")  // CP437 for ä (0x84)
+            .replace("ö", "\u0094")  // CP437 for ö (0x94)
+            .replace("ü", "\u0081")  // CP437 for ü (0x81)
+            .replace("ß", "\u00E1")  // CP437 for ß (0xE1)
     }
 
     override fun onDestroy() {

@@ -63,6 +63,9 @@
             android:enabled="true"
             android:exported="false"
             android:permission="android.permission.BLUETOOTH_ADMIN">
+            <intent-filter>
+                <action android:name="com.example.notificationlistener.Bluetooth.BluetoothService" />
+            </intent-filter>
         </service>
 
     </application>

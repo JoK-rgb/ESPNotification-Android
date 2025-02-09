@@ -106,8 +106,24 @@ class BluetoothService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_NOT_STICKY
+    @SuppressLint("ForegroundServiceType")
+    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
+        try {
+            startForeground(1, createNotification())
+        } catch (e: Exception) {
+
+        }
+        return START_STICKY // Keeps the service running until explicitly stopped
+    }
+
+    private fun createNotification(): Notification {
+        val notificationBuilder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Bluetooth Service")
+            .setContentText("Bluetooth is running in the background")
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setOngoing(true)
+
+        return notificationBuilder.build()
     }
 
     override fun onBind(intent: Intent): IBinder {
@@ -194,7 +210,7 @@ class BluetoothService : Service() {
                 if (uartService != null) {
                     rxCharacteristic = uartService.getCharacteristic(UUID.fromString(RX_CHAR_UUID))
                     rxCharacteristic?.let {
-                        sendData("Service Connected")
+                        sendData("Service Connected".toByteArray())
                     }
                 }
             }
@@ -246,17 +262,13 @@ class BluetoothService : Service() {
         }
     }
 
-    fun sendData(data: String) {
+    fun sendData(data: ByteArray) {
         if (!isConnected) return
 
         rxCharacteristic?.let { characteristic ->
             try {
-                characteristic.value = data.toByteArray()
-                if (ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.BLUETOOTH_CONNECT
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
+                characteristic.value = data
+                if (ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
                     bluetoothGatt?.writeCharacteristic(characteristic)
                 }
             } catch (e: Exception) {
@@ -276,10 +288,8 @@ class BluetoothService : Service() {
                 return
             }
 
-            // Properly clean up GATT connection
             bluetoothGatt?.let { gatt ->
                 gatt.disconnect()
-                // Wait for disconnect to complete
                 Thread.sleep(100)
                 gatt.close()
             }
